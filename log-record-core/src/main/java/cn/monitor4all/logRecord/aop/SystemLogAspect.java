@@ -24,7 +24,9 @@ import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.expression.BeanFactoryResolver;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.expression.BeanResolver;
+import org.springframework.expression.EvaluationException;
 import org.springframework.expression.Expression;
+import org.springframework.expression.ParseException;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
@@ -173,7 +175,8 @@ public class SystemLogAspect implements ApplicationContextAware {
                     logDTOList.forEach(logDTO -> {
                         Runnable task = () -> createLogFunction.accept(logDTO);
                         Runnable ttlRunnable = TtlRunnable.get(task);
-                        logRecordThreadPool.getLogRecordPoolExecutor().execute(ttlRunnable);
+                        logRecordThreadPool.getLogRecordPoolExecutor()
+                                .execute(ttlRunnable);
                     });
                 } else {
                     logDTOList.forEach(createLogFunction);
@@ -273,7 +276,8 @@ public class SystemLogAspect implements ApplicationContextAware {
             }
 
             logDTO = new LogDTO();
-            logDTO.setLogId(UUID.randomUUID().toString());
+            logDTO.setLogId(UUID.randomUUID()
+                    .toString());
             logDTO.setBizId(bizId);
             logDTO.setBizType(bizType);
             logDTO.setTag(tag);
@@ -298,17 +302,33 @@ public class SystemLogAspect implements ApplicationContextAware {
     }
 
     private String parseParamToString(String spel, StandardEvaluationContext context) {
-        Expression bizIdExpression = parser.parseExpression(spel);
-        return bizIdExpression.getValue(context, String.class);
+        try {
+            Expression bizIdExpression = parser.parseExpression(spel);
+            return bizIdExpression.getValue(context, String.class);
+        } catch (ParseException e) {
+            log.error("操作日志SpEL表达式解析失败", e);
+            return "该字段表达式解析失败,请联系技术支持";
+        } catch (EvaluationException e) {
+            log.error("操作日志SpEL表达式取值失败", e);
+            return "该字段表达式解析成功但取值失败,请联系技术支持";
+        }
     }
 
     private String parseParamToStringOrJson(String spel, StandardEvaluationContext context) {
-        Expression msgExpression = parser.parseExpression(spel);
-        Object obj = msgExpression.getValue(context, Object.class);
-        if (obj != null) {
-            return obj instanceof String ? (String) obj : JsonUtil.safeToJsonString(obj);
+        try {
+            Expression msgExpression = parser.parseExpression(spel);
+            Object obj = msgExpression.getValue(context, Object.class);
+            if (obj != null) {
+                return obj instanceof String ? (String) obj : JsonUtil.safeToJsonString(obj);
+            }
+            return null;
+        } catch (ParseException e) {
+            log.error("操作日志SpEL表达式解析失败", e);
+            return "该字段表达式解析失败,请联系技术支持";
+        } catch (EvaluationException e) {
+            log.error("操作日志SpEL表达式取值失败", e);
+            return "该字段表达式解析成功但取值失败,请联系技术支持";
         }
-        return null;
     }
 
     private Method getMethod(JoinPoint joinPoint) {
@@ -317,7 +337,8 @@ public class SystemLogAspect implements ApplicationContextAware {
             Signature signature = joinPoint.getSignature();
             MethodSignature ms = (MethodSignature) signature;
             Object target = joinPoint.getTarget();
-            method = target.getClass().getMethod(ms.getName(), ms.getParameterTypes());
+            method = target.getClass()
+                    .getMethod(ms.getName(), ms.getParameterTypes());
         } catch (NoSuchMethodException e) {
             log.error("OperationLogAspect getMethod error", e);
         }
